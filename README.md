@@ -22,10 +22,10 @@ Create a `.env` file in the project directory:
 
 ```dotenv
 GEMINI_KEY=your_gemini_api_key
-GEMINI_MODEL=gemini-3.8-flash
+GEMINI_MODEL=gemini-1.5-flash
 ```
 
-`GEMINI_MODEL` is optional and defaults to `gemini-3.8-flash`. The app also accepts `GEMINI_API_KEY` or `GOOGLE_API_KEY` if `GEMINI_KEY` is absent. Existing shell environment variables take precedence over `.env` values.
+`GEMINI_MODEL` is optional and defaults to `gemini-1.5-flash`. The application also features automatic fallback to alternative lightweight models (`gemini-2.0-flash-lite`, `gemini-1.5-flash-8b`) in case of temporary high-demand spikes (503). The app also accepts `GEMINI_API_KEY` or `GOOGLE_API_KEY` if `GEMINI_KEY` is absent. Existing shell environment variables take precedence over `.env` values.
 
 The repository's `.gitignore` excludes `.env` and `.venv`; keep your API key out of committed files.
 
