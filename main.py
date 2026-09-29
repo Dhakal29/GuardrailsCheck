@@ -1,6 +1,7 @@
 import asyncio
 import os
 import sys
+from time import perf_counter
 from dotenv import load_dotenv
 
 # Load environment variables from .env
@@ -19,7 +20,7 @@ GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-3.8-flash")
 
 system_prompt = (
     "You are a friendly and helpful assistant that specializes exclusively in cats and dogs. "
-    "Provide informative and engaging answers."
+    "Provide informative and engaging answers. Keep answers concise unless the user asks for detail."
 )
 
 # Setup Gemini Client (supports google-genai or google-generativeai)
@@ -47,6 +48,11 @@ async def call_gemini_async(prompt: str, sys_instruction: str = "", temperature:
             temperature=temperature,
             system_instruction=sys_instruction if sys_instruction else None,
             automatic_function_calling=types.AutomaticFunctionCallingConfig(disable=True),
+            thinking_config=(
+                types.ThinkingConfig(thinking_level="low")
+                if GEMINI_MODEL.removeprefix("models/").startswith("gemini-3")
+                else None
+            ),
         )
         # Using the async client
         response = await client.aio.models.generate_content(
@@ -68,18 +74,20 @@ async def call_gemini_async(prompt: str, sys_instruction: str = "", temperature:
 async def get_chat_response(user_request: str) -> str:
     """Main LLM call: Generates the actual conversational response."""
     print("  [Chat LLM] Requesting answer...")
+    started = perf_counter()
     response_text = await call_gemini_async(
         prompt=user_request,
         sys_instruction=system_prompt,
         temperature=0.5,
     )
-    print("  [Chat LLM] Response generated.")
+    print(f"  [Chat LLM] Response generated in {perf_counter() - started:.2f}s.")
     return response_text
 
 
 async def topical_guardrail(user_request: str) -> str:
     """Guardrail LLM call: Assesses if the question topic is allowed."""
     print("  [Guardrail] Assessing topic...")
+    started = perf_counter()
     guardrail_sys_prompt = (
         "Your role is to assess whether the user question is allowed or not. "
         "The allowed topics are strictly cats and dogs. "
@@ -91,7 +99,7 @@ async def topical_guardrail(user_request: str) -> str:
         sys_instruction=guardrail_sys_prompt,
         temperature=0.0,
     )
-    print("  [Guardrail] Assessment complete.")
+    print(f"  [Guardrail] Assessment complete in {perf_counter() - started:.2f}s.")
     return response_text.strip().lower()
 
 
@@ -104,24 +112,19 @@ async def execute_chat_with_guardrail(user_request: str) -> str:
     topical_guardrail_task = asyncio.create_task(topical_guardrail(user_request))
     chat_task = asyncio.create_task(get_chat_response(user_request))
 
-    # Wait for the guardrail task to complete first
-    while not topical_guardrail_task.done():
-        done, _ = await asyncio.wait(
-            [topical_guardrail_task, chat_task], return_when=asyncio.FIRST_COMPLETED
-        )
-        if topical_guardrail_task in done:
-            break
-        await asyncio.sleep(0.05)
-
-    guardrail_response = topical_guardrail_task.result()
-
-    if "not_allowed" in guardrail_response:
-        chat_task.cancel()
-        print("\n  >>> [GUARD TRIGGERED] Topical guardrail blocked this request! <<<")
-        return "I can only talk about cats and dogs, the best animals that ever lived."
-
-    # If allowed, await the chat response (if not finished already)
-    return await chat_task
+    try:
+        # Both requests run concurrently; release output only after explicit approval.
+        guardrail_response = await topical_guardrail_task
+        if guardrail_response != "allowed":
+            print("\n  >>> [GUARD TRIGGERED] Topical guardrail blocked this request! <<<")
+            return "I can only talk about cats and dogs, the best animals that ever lived."
+        return await chat_task
+    finally:
+        # Drain tasks on rejection or errors so requests do not linger between turns.
+        for task in (topical_guardrail_task, chat_task):
+            if not task.done():
+                task.cancel()
+        await asyncio.gather(topical_guardrail_task, chat_task, return_exceptions=True)
 
 
 async def run_chatbot():
@@ -142,7 +145,9 @@ async def run_chatbot():
                 break
 
             print("\nProcessing request with speculative guardrail check...")
+            started = perf_counter()
             bot_reply = await execute_chat_with_guardrail(user_input)
+            print(f"  [Total] {perf_counter() - started:.2f}s")
             print(f"\nBot: {bot_reply}")
 
         except (KeyboardInterrupt, EOFError):
