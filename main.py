@@ -15,15 +15,8 @@ if not GEMINI_KEY:
     print("Please ensure your .env has: GEMINI_KEY=your_gemini_api_key")
     sys.exit(1)
 
-# Verified lightweight, stable production models
-DEFAULT_LIGHTWEIGHT_MODELS = [
-    "gemini-1.5-flash",
-    "gemini-2.0-flash-lite",
-    "gemini-1.5-flash-8b",
-]
-
-# Set active model from environment or default to the fastest lightweight model
-GEMINI_MODEL = os.getenv("GEMINI_MODEL", DEFAULT_LIGHTWEIGHT_MODELS[0])
+# Override the default with GEMINI_MODEL in .env or the shell.
+GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-3.1-flash-lite")
 
 system_prompt = (
     "You are a friendly and helpful assistant that specializes exclusively in cats and dogs. "
@@ -49,51 +42,29 @@ except ImportError:
 
 
 async def call_gemini_async(prompt: str, sys_instruction: str = "", temperature: float = 0.7) -> str:
-    """Helper to invoke Gemini asynchronously with automatic fallback to other lightweight models on 503/404."""
-    global GEMINI_MODEL
-    # Build list of models to try starting with currently selected model
-    models_to_try = [GEMINI_MODEL] + [m for m in DEFAULT_LIGHTWEIGHT_MODELS if m != GEMINI_MODEL]
-    last_error = None
-
-    for model_name in models_to_try:
-        try:
-            if USE_NEW_SDK:
-                config = types.GenerateContentConfig(
-                    temperature=temperature,
-                    system_instruction=sys_instruction if sys_instruction else None,
-                    automatic_function_calling=types.AutomaticFunctionCallingConfig(disable=True),
-                )
-                response = await client.aio.models.generate_content(
-                    model=model_name,
-                    contents=prompt,
-                    config=config,
-                )
-                # If this model succeeded and was a fallback, remember it
-                if model_name != GEMINI_MODEL:
-                    GEMINI_MODEL = model_name
-                return response.text or ""
-            else:
-                model = legacy_genai.GenerativeModel(
-                    model_name=model_name,
-                    system_instruction=sys_instruction if sys_instruction else None,
-                    generation_config={"temperature": temperature},
-                )
-                response = await model.generate_content_async(prompt)
-                if model_name != GEMINI_MODEL:
-                    GEMINI_MODEL = model_name
-                return response.text or ""
-        except Exception as e:
-            err_str = str(e)
-            # If 503 (high demand) or 404 (not found), try next lightweight model
-            if "503" in err_str or "404" in err_str or "UNAVAILABLE" in err_str or "NOT_FOUND" in err_str:
-                print(f"  [Model Warning] {model_name} unavailable ({'503 High Demand' if '503' in err_str else 'Not Available'}). Trying alternate lightweight model...")
-                last_error = e
-                continue
-            raise e
-
-    if last_error:
-        raise last_error
-    return ""
+    """Invoke the configured model without retrying unavailable model IDs."""
+    if USE_NEW_SDK:
+        config = types.GenerateContentConfig(
+            temperature=temperature,
+            system_instruction=sys_instruction or None,
+            automatic_function_calling=types.AutomaticFunctionCallingConfig(disable=True),
+            thinking_config=(
+                types.ThinkingConfig(thinking_level="low")
+                if GEMINI_MODEL.removeprefix("models/").startswith("gemini-3")
+                else None
+            ),
+        )
+        response = await client.aio.models.generate_content(
+            model=GEMINI_MODEL, contents=prompt, config=config,
+        )
+    else:
+        model = legacy_genai.GenerativeModel(
+            model_name=GEMINI_MODEL,
+            system_instruction=sys_instruction or None,
+            generation_config={"temperature": temperature},
+        )
+        response = await model.generate_content_async(prompt)
+    return response.text or ""
 
 
 async def get_chat_response(user_request: str) -> str:
@@ -183,4 +154,7 @@ async def run_chatbot():
 
 
 if __name__ == "__main__":
-    asyncio.run(run_chatbot())
+    try:
+        asyncio.run(run_chatbot())
+    except KeyboardInterrupt:
+        print("\nExiting...")
