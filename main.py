@@ -15,11 +15,10 @@ if not GEMINI_KEY:
     print("Please ensure your .env has: GEMINI_KEY=your_gemini_api_key")
     sys.exit(1)
 
-# Lightweight models priority list (fast, low latency, and high availability)
+# Verified lightweight, stable production models
 DEFAULT_LIGHTWEIGHT_MODELS = [
-    "gemini-2.5-flash-lite",
-    "gemini-2.0-flash-lite",
     "gemini-1.5-flash",
+    "gemini-2.0-flash-lite",
     "gemini-1.5-flash-8b",
 ]
 
