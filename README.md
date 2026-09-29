@@ -83,3 +83,23 @@ The current implementation uses low thinking for Gemini 3 models through `google
 | `requirements.txt` | Python dependencies: `google-genai` and `python-dotenv` |
 | `.gitignore` | Excludes local credentials and the virtual environment |
 | `.env` | Local API key and optional model override; not committed |
+
+
+## Permission-based deletion exercise
+
+Run `python pet_database.py` for a standalone SQLite exercise with no API key required, or use these commands in `python main.py`:
+
+```text
+list pets
+delete pet 2
+delete pet 1
+list pets
+```
+
+The first command initializes a local `demo_pets.sqlite3` database with sample records. The simulated user `demo-owner` owns pet 1 (Milo) and pet 3 (Luna). Pet 2 belongs to another user, so deleting it is blocked. Deleting pet 1 marks it deleted and hides it from future listings; its row remains in the database. Restarting does not undo deletion.
+
+Only the exact command `delete pet <id>` invokes deletion. These commands are handled by Python before the LLM path; they are not natural-language tool calls. No prompt or model output is executed as SQL. The parameterized update includes both the record ID and owner ID, enforcing ownership in the same operation. Bulk deletion is unsupported.
+
+This is a local teaching example, not real authentication or a secure multi-user application. The identity is fixed in Python, and anyone with direct access to the SQLite file can change it. A deployed version must derive identity from a verified server-side login and restrict direct database access.
+
+Relevant code: `handle_pet_command()` parses commands, `delete_pet()` enforces ownership, and `main.py` routes commands before chat generation. Run the permission tests with `python -m unittest test_pet_database.py`.

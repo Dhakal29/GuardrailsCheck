@@ -3,6 +3,7 @@ import os
 import sys
 from time import perf_counter
 from dotenv import load_dotenv
+from pet_database import handle_pet_command
 
 # Load environment variables from .env
 load_dotenv()
@@ -129,6 +130,8 @@ async def run_chatbot():
     print(f"🐾 Gemini Guardrails Chatbot Demo (Model: {GEMINI_MODEL})")
     print("Rules: Only questions about cats and dogs are allowed.")
     print("Type 'exit' or 'quit' to stop.")
+    print("Local database demo: 'list pets' or 'delete pet <id>'.")
+    print("Database identity: demo-owner (simulated; not a real login).")
     print("=" * 60)
 
     while True:
@@ -139,6 +142,11 @@ async def run_chatbot():
             if user_input.lower() in ["exit", "quit"]:
                 print("Goodbye!")
                 break
+
+            database_reply = handle_pet_command(user_input)
+            if database_reply is not None:
+                print(f"\nBot: {database_reply}")
+                continue
 
             print("\nProcessing request with speculative guardrail check...")
             started = perf_counter()
